@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { connectGoogleDrive, uploadDriveFile, classifyFile, DRIVE_FOLDERS } from './lib/googleDrive'
+import { connectGoogleDrive, uploadDriveFile, classifyFile, listDriveAssets, DRIVE_FOLDERS } from './lib/googleDrive'
 import { supabase } from './lib/supabase'
 import {
   Aperture, ArrowDownUp, AudioLines, Bookmark, Check, ChevronDown,
@@ -11,32 +11,25 @@ import {
 } from 'lucide-react'
 
 const categories = [
-  { id: 'all', label: 'All assets', icon: LayoutGrid, count: '2,486' },
-  { id: 'projects', label: 'Project files', icon: FolderOpen, count: '128' },
-  { id: 'transitions', label: 'Transitions', icon: Waves, count: '342' },
-  { id: 'footage', label: 'Footages', icon: Video, count: '684' },
-  { id: 'broll', label: 'B-roll', icon: Clapperboard, count: '516' },
-  { id: 'sfx', label: 'Sound effects', icon: AudioLines, count: '491' },
-  { id: 'music', label: 'Background music', icon: Music2, count: '325' },
+  { id: 'all', label: 'All assets', icon: LayoutGrid },
+  { id: 'projects', label: 'Project files', icon: FolderOpen },
+  { id: 'transitions', label: 'Transitions', icon: Waves },
+  { id: 'footage', label: 'Footages', icon: Video },
+  { id: 'broll', label: 'B-roll', icon: Clapperboard },
+  { id: 'sfx', label: 'Sound effects', icon: AudioLines },
+  { id: 'music', label: 'Background music', icon: Music2 },
+  { id: 'images', label: 'Images & graphics', icon: FileImage },
+  { id: 'archives', label: 'Archives', icon: FileArchive },
 ]
 
-const samples = [
-  { id: 1, name: 'Midnight city aerial', type: 'footage', kind: 'VIDEO', ext: 'MP4', duration: '00:18', size: '84.2 MB', resolution: '4K', tag: 'Cinematic', color: 'violet', date: 'Today' },
-  { id: 2, name: 'Ethereal light leaks', type: 'transitions', kind: 'VIDEO', ext: 'MOV', duration: '00:04', size: '28.6 MB', resolution: '4K', tag: 'Overlay', color: 'amber', date: 'Today' },
-  { id: 3, name: 'Soft piano atmosphere', type: 'music', kind: 'AUDIO', ext: 'WAV', duration: '02:46', size: '46.1 MB', resolution: 'WAV', tag: 'Emotional', color: 'blue', date: 'Yesterday' },
-  { id: 4, name: 'Rain on window close-up', type: 'broll', kind: 'VIDEO', ext: 'MP4', duration: '00:24', size: '112 MB', resolution: '4K', tag: 'Moody', color: 'cyan', date: 'Yesterday' },
-  { id: 5, name: 'Impact whoosh collection', type: 'sfx', kind: 'AUDIO', ext: 'WAV', duration: '00:02', size: '8.4 MB', resolution: '48 kHz', tag: 'Impact', color: 'orange', date: 'Nov 22' },
-  { id: 6, name: 'Brand film — final edit', type: 'projects', kind: 'PROJECT', ext: 'PRPROJ', duration: '—', size: '18.7 MB', resolution: 'Premiere', tag: 'Client work', color: 'green', date: 'Nov 21' },
-  { id: 7, name: 'Mountain drone sequence', type: 'footage', kind: 'VIDEO', ext: 'MOV', duration: '00:32', size: '196 MB', resolution: '4K', tag: 'Nature', color: 'green', date: 'Nov 20' },
-  { id: 8, name: 'Analog film grain 04', type: 'transitions', kind: 'VIDEO', ext: 'MOV', duration: '00:12', size: '64 MB', resolution: '4K', tag: 'Texture', color: 'pink', date: 'Nov 19' },
-]
+const samples = []
 
 const navGroups = [
   { title: 'LIBRARY', items: categories },
 ]
 
 function Thumb({ item }) {
-  const Icon = item.kind === 'AUDIO' ? AudioLines : item.kind === 'PROJECT' ? FileArchive : item.type === 'transitions' ? Aperture : FileVideo
+  const Icon = item.kind === 'AUDIO' ? AudioLines : item.kind === 'PROJECT' ? FileArchive : item.kind === 'IMAGE' ? FileImage : item.type === 'transitions' ? Aperture : item.kind === 'FILE' ? FileArchive : FileVideo
   return <div className={`thumb thumb-${item.color}`}>
     <div className="thumb-orb" />
     <div className="thumb-grid" />
@@ -51,7 +44,9 @@ function App() {
   const [query, setQuery] = useState('')
   const [view, setView] = useState('grid')
   const [sort, setSort] = useState('Recently added')
-  const [favorites, setFavorites] = useState([2, 5])
+  const [favorites, setFavorites] = useState([])
+  const [assets, setAssets] = useState([])
+  const [loadingAssets, setLoadingAssets] = useState(false)
   const [selected, setSelected] = useState([])
   const [showFilters, setShowFilters] = useState(false)
   const [showUpload, setShowUpload] = useState(false)
@@ -65,11 +60,11 @@ function App() {
 
   const visible = useMemo(() => {
     const q = query.trim().toLowerCase()
-    let list = samples.filter(item => (active === 'all' || item.type === active) &&
+    let list = assets.filter(item => (active === 'all' || item.type === active) &&
       (!q || [item.name, item.tag, item.ext, item.type, item.resolution].join(' ').toLowerCase().includes(q)))
     if (sort === 'Name A–Z') list = [...list].sort((a, b) => a.name.localeCompare(b.name))
     return list
-  }, [active, query, sort])
+  }, [assets, active, query, sort])
 
   const currentCategory = categories.find(c => c.id === active)?.label || 'All assets'
   const toggleFavorite = id => setFavorites(old => old.includes(id) ? old.filter(x => x !== id) : [...old, id])
@@ -79,10 +74,13 @@ function App() {
     try {
       const connected = await connectGoogleDrive()
       setDrive(connected)
-      notify('Google Drive connected. Editing Assets and its eight subfolders are ready.')
+      setLoadingAssets(true)
+      const driveAssets = await listDriveAssets(connected.token, connected.folders)
+      setAssets(driveAssets)
+      notify('Google Drive connected. Loaded ' + driveAssets.length + ' real file(s).')
     } catch (error) {
       notify(error.message || 'Could not connect Google Drive.')
-    } finally { setConnecting(false) }
+    } finally { setConnecting(false); setLoadingAssets(false) }
   }
   const handleUpload = async () => {
     if (!drive) { notify('Connect Google Drive before uploading.'); return }
@@ -112,6 +110,8 @@ function App() {
         }
         completed++
       }
+      const refreshedAssets = await listDriveAssets(drive.token, drive.folders)
+      setAssets(refreshedAssets)
       const sessionResult = supabase ? await supabase.auth.getSession() : null
       const hasSession = !!sessionResult?.data?.session
       notify('Uploaded ' + completed + ' file(s) to Google Drive.' + (hasSession ? ' Metadata saved.' : ' Supabase sign-in is still needed to sync metadata.'))
@@ -140,7 +140,7 @@ function App() {
         {categories.map(item => {
           const Icon = item.icon
           return <button key={item.id} onClick={() => { setActive(item.id); setSelected([]) }} className={`nav-item ${active === item.id ? 'active' : ''}`}>
-            <Icon size={17} strokeWidth={1.7} /><span>{item.label}</span><small>{item.count}</small>
+            <Icon size={17} strokeWidth={1.7} /><span>{item.label}</span><small>{item.id === 'all' ? assets.length : assets.filter(asset => asset.type === item.id).length}</small>
           </button>
         })}
 
@@ -156,12 +156,12 @@ function App() {
       <div className="storage-card">
         <div className="storage-top"><div className="drive-icon"><HardDrive size={15} /></div><span>STORAGE</span><span className="connect-status"><i /> {drive ? "Connected" : "Not connected"}</span></div>
         <div className="storage-title">{drive ? "Editing Assets is ready" : "Connect your Google Drive"}</div>
-        <p>{drive ? "Eight asset folders are ready in My Drive." : "Your files stay in your Drive. TreasureVault organizes and finds them."}</p>
+        <p>{drive ? "Your Editing Assets folders are connected." : "Your files stay in your Drive. TreasureVault organizes and finds them."}</p>
         <button className="connect-button" disabled={connecting} onClick={connectDrive}>{connecting ? "Connecting…" : drive ? "Reconnect Drive" : "Connect Drive"} <ArrowDownUp size={13} /></button>
       </div>
       <div className="sidebar-bottom">
         <button className="nav-item" onClick={() => notify('Settings will be added as integrations are connected.')}><Settings2 size={17} /><span>Settings</span></button>
-        <button className="profile-row"><div className="avatar">Y</div><div><strong>Your workspace</strong><span>Local preview</span></div><CircleHelp size={16} /></button>
+        <button className="profile-row"><div className="avatar">Y</div><div><strong>Your workspace</strong><span>Google Drive library</span></div><CircleHelp size={16} /></button>
       </div>
     </aside>
 
@@ -188,15 +188,15 @@ function App() {
         <div className="search-hints"><span>TRY</span><button onClick={() => setQuery('dark cinematic')}>dark cinematic</button><i>·</i><button onClick={() => setQuery('emotional piano')}>emotional piano</button><i>·</i><button onClick={() => setQuery('drone mountains')}>drone mountains</button><i>·</i><button onClick={() => setQuery('whoosh')}>whoosh</button></div>
 
         <section className="stats-row">
-          <div className="stat"><div className="stat-icon"><Grid2X2 size={16} /></div><div><strong>2,486</strong><span>Total assets</span></div></div>
-          <div className="stat"><div className="stat-icon"><Cloud size={16} /></div><div><strong>—</strong><span>Drive storage used</span></div></div>
+          <div className="stat"><div className="stat-icon"><Grid2X2 size={16} /></div><div><strong>{assets.length.toLocaleString()}</strong><span>Total assets</span></div></div>
+          <div className="stat"><div className="stat-icon"><Cloud size={16} /></div><div><strong>{assets.reduce((sum, item) => sum + (item.bytes || 0), 0) ? (assets.reduce((sum, item) => sum + (item.bytes || 0), 0) / 1073741824).toFixed(2) + ' GB' : '—'}</strong><span>Indexed folder size</span></div></div>
           <div className="stat"><div className="stat-icon"><Star size={16} /></div><div><strong>{favorites.length}</strong><span>Favorites</span></div></div>
           <div className="stat"><div className="stat-icon"><Sparkles size={16} /></div><div><strong>Not active</strong><span>AI indexing</span></div></div>
         </section>
 
         <section className="assets-section">
           <div className="section-toolbar">
-            <div><h2>{active === 'all' ? 'Recently added' : currentCategory}</h2><span className="result-count">{visible.length} sample assets <span>·</span> sorted by {sort.toLowerCase()}</span></div>
+            <div><h2>{active === 'all' ? 'Recently added' : currentCategory}</h2><span className="result-count">{visible.length} files from Google Drive <span>·</span> sorted by {sort.toLowerCase()}</span></div>
             <div className="toolbar-actions">
               <button className={showFilters ? 'tool-button selected' : 'tool-button'} onClick={() => setShowFilters(v => !v)}><SlidersHorizontal size={15} /> Filters</button>
               <div className="sort-control"><ArrowDownUp size={14} /><select value={sort} onChange={e => setSort(e.target.value)}><option>Recently added</option><option>Name A–Z</option></select><ChevronDown size={13} /></div>
@@ -208,7 +208,7 @@ function App() {
 
           {selected.length > 0 && <div className="selection-bar"><span>{selected.length} selected</span><button onClick={() => setSelected([])}>Clear selection</button></div>}
 
-          {visible.length ? <div className={view === 'grid' ? 'asset-grid' : 'asset-list'}>
+          {loadingAssets ? <div className="empty-state"><Cloud size={24} /><h3>Reading your Drive library…</h3><p>Fetching files from your Editing Assets folders.</p></div> : visible.length ? <div className={view === 'grid' ? 'asset-grid' : 'asset-list'}>
             {visible.map(item => <article key={item.id} className={`asset-card ${selected.includes(item.id) ? 'asset-selected' : ''}`}>
               <div className="asset-preview-wrap" onClick={() => setSelected(old => old.includes(item.id) ? old.filter(x => x !== item.id) : [...old, item.id])}>
                 <Thumb item={item} />
@@ -217,14 +217,14 @@ function App() {
                 {item.duration !== '—' && <span className="duration">{item.duration}</span>}
               </div>
               <div className="asset-info">
-                <div className="asset-title-row"><h3 title={item.name}>{item.name}</h3><button className="more-button" onClick={() => notify('Asset actions will be available when files are connected.')}>···</button></div>
+                <div className="asset-title-row"><h3 title={item.name}>{item.name}</h3><a className="more-button" href={item.webViewLink} target="_blank" rel="noreferrer" title="Open in Google Drive">↗</a></div>
                 <div className="asset-meta"><span>{item.ext}</span><i />{item.size}<i />{item.resolution}</div>
                 <div className="asset-foot"><span className="asset-tag">{item.tag}</span><span>{item.date}</span></div>
               </div>
             </article>)}
           </div> : <div className="empty-state"><Search size={24} /><h3>No assets found</h3><p>Try another search or switch to a different library section.</p><button onClick={() => { setQuery(''); setActive('all') }}>Clear search</button></div>}
         </section>
-        <footer className="page-footer"><span>Showing sample interface data</span><span>TreasureVault <b>·</b> Built for your workflow</span></footer>
+        <footer className="page-footer"><span>{drive ? 'Live Google Drive library' : 'Connect Google Drive to load your files'}</span><span>TreasureVault <b>·</b> Built for your workflow</span></footer>
       </div>
     </main>
 
