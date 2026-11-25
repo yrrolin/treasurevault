@@ -244,7 +244,7 @@ function App() {
           {loadingAssets ? <div className="empty-state"><Cloud size={24} /><h3>Reading your Drive library…</h3><p>Fetching files from your Editing Assets folders.</p></div> : visible.length ? <div className={view === 'grid' ? 'asset-grid' : 'asset-list'}>
             {visible.map(item => <article key={item.id} className={`asset-card ${selected.includes(item.id) ? 'asset-selected' : ''}`}>
               <div className="asset-preview-wrap" onClick={() => setSelected(old => old.includes(item.id) ? old.filter(x => x !== item.id) : [...old, item.id])}>
-                <Thumb item={item} />
+                <AssetPreview item={item} token={drive?.token} />
                 <span className="source-badge"><HardDrive size={11} /> DRIVE</span>
                 <button className={`favorite-button ${favorites.includes(item.id) ? 'is-favorite' : ''}`} onClick={e => { e.stopPropagation(); toggleFavorite(item.id) }} title="Toggle favorite"><Star size={15} fill={favorites.includes(item.id) ? 'currentColor' : 'none'} /></button>
                 {item.duration !== '—' && <span className="duration">{item.duration}</span>}
