@@ -14,7 +14,7 @@ permissions:
 
 jobs:
   deploy:
-    if: ${{ secrets.SUPABASE_ACCESS_TOKEN != '' }}
+    if: ${{ vars.SUPABASE_DEPLOY_ENABLED == 'true' }}
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
