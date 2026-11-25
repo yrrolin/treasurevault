@@ -1,11 +1,9 @@
-import { supabase } from './supabase'
-
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL
 const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY
 
 async function invokeScriptImages(body, driveToken) {
   if (!SUPABASE_URL || !SUPABASE_KEY) throw new Error('Supabase is not configured. Add its URL and publishable key to GitHub Actions variables.')
-  const response = await fetch(SUPABASE_URL.replace(/\\/$/, '') + '/functions/v1/script-to-images', {
+  const response = await fetch(SUPABASE_URL.replace(/\/$/, '') + '/functions/v1/script-to-images', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', apikey: SUPABASE_KEY, Authorization: 'Bearer ' + SUPABASE_KEY },
     body: JSON.stringify({ ...body, driveAccessToken: driveToken }),
