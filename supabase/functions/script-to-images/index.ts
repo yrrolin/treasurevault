@@ -200,7 +200,7 @@ Deno.serve(async (req) => {
     const body = await req.json();
     const token = String(body.driveAccessToken || "");
     if (!token) return json({ error: "Connect Google Drive and try again." }, 401);
-    const identityResponse = await fetch("https://www.googleapis.com/oauth2/v3/userinfo", { headers: { Authorization: "Bearer " + token } });
+    const identityResponse = await fetch("https://oauth2.googleapis.com/tokeninfo?access_token=" + encodeURIComponent(token));
     if (!identityResponse.ok) return json({ error: "Your Google Drive session expired. Reconnect Drive and try again." }, 401);
     const action = String(body.action || "search");
     if (action === "download") return await handleDownload(body, token);
