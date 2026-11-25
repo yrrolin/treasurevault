@@ -121,7 +121,7 @@ export async function listDriveAssets(token, folders) {
         q: "'" + driveFolder.id + "' in parents and trashed = false and mimeType != 'application/vnd.google-apps.folder'",
         pageSize: '1000',
         orderBy: 'modifiedTime desc',
-        fields: 'nextPageToken,files(id,name,mimeType,size,modifiedTime,webViewLink,thumbnailLink,imageMediaMetadata,videoMediaMetadata,thumbnailLink)',
+        fields: 'nextPageToken,files(id,name,mimeType,size,modifiedTime,webViewLink,thumbnailLink,imageMediaMetadata,videoMediaMetadata,parents)',
       })
       if (pageToken) params.set('pageToken', pageToken)
       const result = await driveRequest(token, 'files?' + params.toString())
@@ -142,7 +142,7 @@ export async function listDriveAssets(token, folders) {
           date: file.modifiedTime ? new Date(file.modifiedTime).toLocaleDateString() : '—',
           webViewLink: file.webViewLink || 'https://drive.google.com/file/d/' + file.id + '/view',
           thumbnailLink: file.thumbnailLink || null, mimeType: mime,
-          modifiedTime: file.modifiedTime || null,
+          modifiedTime: file.modifiedTime || null, folderId: driveFolder.id, folderName: folder.name,
         })
       }
       pageToken = result.nextPageToken || ''
@@ -168,4 +168,38 @@ export async function uploadDriveFile(token, folderId, file) {
   const result = await response.json().catch(() => ({}))
   if (!response.ok) throw new Error(result.error?.message || 'Upload failed (' + response.status + ')')
   return result
+}
+
+
+export async function moveDriveFile(token, fileId, oldFolderId, newFolderId) {
+  if (!fileId || !oldFolderId || !newFolderId) throw new Error('Missing file or folder information.')
+  if (oldFolderId === newFolderId) return
+  const params = new URLSearchParams({ addParents: newFolderId, removeParents: oldFolderId, fields: 'id,name,parents' })
+  const response = await fetch('https://www.googleapis.com/drive/v3/files/' + encodeURIComponent(fileId) + '?' + params.toString(), {
+    method: 'PATCH',
+    headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' },
+    body: JSON.stringify({}),
+  })
+  const result = await response.json().catch(() => ({}))
+  if (!response.ok) throw new Error(result.error?.message || 'Could not move this file.')
+  return result
+}
+
+export async function downloadDriveFile(token, fileId, fileName) {
+  const response = await fetch('https://www.googleapis.com/drive/v3/files/' + encodeURIComponent(fileId) + '?alt=media', {
+    headers: { Authorization: 'Bearer ' + token },
+  })
+  if (!response.ok) {
+    const result = await response.json().catch(() => ({}))
+    throw new Error(result.error?.message || 'Download failed (' + response.status + ')')
+  }
+  const blob = await response.blob()
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = fileName || 'download'
+  document.body.appendChild(link)
+  link.click()
+  link.remove()
+  window.setTimeout(() => URL.revokeObjectURL(url), 60000)
 }
