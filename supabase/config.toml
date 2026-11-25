@@ -1,0 +1,2 @@
+[functions.script-to-images]
+verify_jwt = false
