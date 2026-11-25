@@ -29,8 +29,8 @@ jobs:
       - name: Build
         run: npm run build
         env:
-          VITE_SUPABASE_URL: ${{ vars.VITE_SUPABASE_URL }}
-          VITE_SUPABASE_ANON_KEY: ${{ vars.VITE_SUPABASE_ANON_KEY }}
+          VITE_SUPABASE_URL: https://dgcsydhgmqoqgnejlnvd.supabase.co
+          VITE_SUPABASE_ANON_KEY: sb_publishable_O1E7MreITGKdKYJeEfd0DA_s49i5Yo5
           VITE_GOOGLE_CLIENT_ID: ${{ vars.VITE_GOOGLE_CLIENT_ID }}
       - name: Configure Pages
         uses: actions/configure-pages@v5
