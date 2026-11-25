@@ -109,6 +109,48 @@ export async function connectGoogleDrive() {
   return { token, root, folders }
 }
 
+
+export async function listDriveAssets(token, folders) {
+  const assets = []
+  for (const folder of DRIVE_FOLDERS) {
+    const driveFolder = folders[folder.key]
+    if (!driveFolder?.id) continue
+    let pageToken = ''
+    do {
+      const params = new URLSearchParams({
+        q: "'" + driveFolder.id + "' in parents and trashed = false and mimeType != 'application/vnd.google-apps.folder'",
+        pageSize: '1000',
+        orderBy: 'modifiedTime desc',
+        fields: 'nextPageToken,files(id,name,mimeType,size,modifiedTime,webViewLink,thumbnailLink,imageMediaMetadata,videoMediaMetadata)',
+      })
+      if (pageToken) params.set('pageToken', pageToken)
+      const result = await driveRequest(token, 'files?' + params.toString())
+      for (const file of (result.files || [])) {
+        const ext = file.name.includes('.') ? file.name.split('.').pop().toUpperCase() : 'FILE'
+        const mime = file.mimeType || ''
+        const kind = mime.startsWith('audio/') ? 'AUDIO' : mime.startsWith('video/') ? 'VIDEO' : mime.startsWith('image/') ? 'IMAGE' : folder.key === 'projects' ? 'PROJECT' : 'FILE'
+        const bytes = Number(file.size || 0)
+        const size = bytes >= 1073741824 ? (bytes / 1073741824).toFixed(1) + ' GB' : bytes >= 1048576 ? (bytes / 1048576).toFixed(1) + ' MB' : bytes >= 1024 ? (bytes / 1024).toFixed(1) + ' KB' : bytes ? bytes + ' B' : '—'
+        const video = file.videoMediaMetadata || {}
+        const image = file.imageMediaMetadata || {}
+        const durationSeconds = video.durationMillis ? Math.round(Number(video.durationMillis) / 1000) : null
+        const duration = durationSeconds == null ? '—' : new Date(durationSeconds * 1000).toISOString().slice(14, 19)
+        const resolution = video.width && video.height ? video.width + '×' + video.height : image.width && image.height ? image.width + '×' + image.height : mime.split('/')[1]?.toUpperCase() || 'FILE'
+        assets.push({
+          id: file.id, name: file.name, type: folder.key, kind, ext, size, bytes,
+          duration, resolution, tag: folder.name, color: 'blue',
+          date: file.modifiedTime ? new Date(file.modifiedTime).toLocaleDateString() : '—',
+          webViewLink: file.webViewLink || 'https://drive.google.com/file/d/' + file.id + '/view',
+          thumbnailLink: file.thumbnailLink || null, mimeType: mime,
+          modifiedTime: file.modifiedTime || null,
+        })
+      }
+      pageToken = result.nextPageToken || ''
+    } while (pageToken)
+  }
+  return assets.sort((a, b) => (b.modifiedTime || '').localeCompare(a.modifiedTime || ''))
+}
+
 export async function uploadDriveFile(token, folderId, file) {
   const metadata = { name: file.name, mimeType: file.type || 'application/octet-stream', parents: [folderId] }
   const boundary = 'treasurevault_upload_boundary'
