@@ -21,7 +21,12 @@ const extensionMap = {
 }
 
 export function classifyFile(file) {
-  const ext = file.name.split('.').pop()?.toLowerCase() || ''
+  const name = file.name.toLowerCase()
+  const ext = name.split('.').pop() || ''
+  if (/(^|[ _.-])b[-_ ]?roll([ _.-]|$)/.test(name)) return 'broll'
+  if (/(^|[ _.-])transition([ _.-]|$)/.test(name)) return 'transitions'
+  if (/(^|[ _.-])sfx([ _.-]|$)/.test(name)) return 'sfx'
+  if (/(^|[ _.-])music([ _.-]|$)/.test(name)) return 'music'
   return extensionMap[ext] || (file.type.startsWith('audio/') ? 'music' : file.type.startsWith('image/') ? 'images' : 'footage')
 }
 
