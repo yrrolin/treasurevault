@@ -65,7 +65,7 @@ function AssetPreview({ item, token }) {
     }
   }, [item.id, item.kind, item.thumbnailLink, token])
 
-  if (!previewUrl) return <AssetPreview item={item} token={drive?.token} />
+  if (!previewUrl) return <Thumb item={item} />
   return <div className="drive-preview">
     <img src={previewUrl} alt={item.name} loading="lazy" />
     {item.kind === 'VIDEO' && <span className="video-preview-play"><Video size={19} fill="currentColor" /></span>}
