@@ -34,7 +34,7 @@ function scoreAsset(name: string, description: string, query: string) {
 
 async function parseScript(script: string, geminiKey: string) {
   const prompt = `Break this video script into a maximum of 6 visual scenes for an editor sourcing still images. Keep scenes in script order. Each scene must have a concise title, a visualBrief describing the exact image needed, and a Google Images searchQuery with concrete visual subjects, locations, objects, lighting and composition. Avoid abstract-only queries. Return JSON only in this shape: {"scenes":[{"id":"scene-1","title":"...","visualBrief":"...","searchQuery":"..."}]}. Script:\n\n${script}`;
-  const response = await fetch("https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=" + encodeURIComponent(geminiKey), {
+  const response = await fetch("https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent?key=" + encodeURIComponent(geminiKey), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
