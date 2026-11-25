@@ -73,7 +73,7 @@ function ScriptImageStudio({ drive, onClose, notify }) {
       const data = await findScriptImages(script, drive)
       setResults(data)
       const all = (data.scenes || []).flatMap(scene => scene.images || [])
-      setSelected(all.map(image => image.selectionId))
+      setSelected(all.slice(0, 20).map(image => image.selectionId))
       if (!all.length) notify('No high-resolution image matches found. Try a more descriptive script.')
     } catch (error) { notify(error.message || 'Could not search for images.') }
     finally { setBusy(false) }
