@@ -60,57 +60,97 @@ function AssetPreview({ item }) {
 
 
 function ScriptImageStudio({ drive, onClose, notify }) {
-  const [script, setScript] = useState('')
+  const [prompt, setPrompt] = useState('')
   const [busy, setBusy] = useState(false)
   const [downloading, setDownloading] = useState(false)
-  const [results, setResults] = useState(null)
+  const [messages, setMessages] = useState([
+    { role: 'assistant', text: "Hi! I'm your TreasureVault creative assistant. Paste a video script and I'll break it into visual scenes, search your Drive library first, then find high-resolution images online for anything missing." }
+  ])
   const [selected, setSelected] = useState([])
+  const lastProvider = [...messages].reverse().find(message => message.aiProvider)?.aiProvider
+  const selectedItems = messages.flatMap(message => (message.results?.scenes || []).flatMap(scene =>
+    (scene.images || []).filter(image => selected.includes(image.selectionId))
+      .map(image => ({ ...image, driveFileId: image.sourceType === 'drive' ? image.id : undefined, sceneTitle: scene.title }))
+  ))
   const runSearch = async () => {
-    if (!script.trim()) { notify('Paste your video script first.'); return }
+    const script = prompt.trim()
+    if (!script || busy) return
     if (!drive) { notify('Connect Google Drive first.'); return }
-    setBusy(true); setResults(null); setSelected([])
+    if (script.length > 12000) { notify('Please keep each script under 12,000 characters.'); return }
+    setMessages(old => [...old, { role: 'user', text: script }])
+    setPrompt('')
+    setBusy(true)
     try {
       const data = await findScriptImages(script, drive)
-      setResults(data)
       const all = (data.scenes || []).flatMap(scene => scene.images || [])
       setSelected(all.slice(0, 20).map(image => image.selectionId))
-      if (!all.length) notify('No high-resolution image matches found. Try a more descriptive script.')
-    } catch (error) { notify(error.message || 'Could not search for images.') }
-    finally { setBusy(false) }
+      setMessages(old => [...old, {
+        role: 'assistant',
+        text: all.length
+          ? "I've analysed your script and found visual options for each scene. Select the images you want in your pack."
+          : "I broke your script into scenes, but couldn't find qualifying high-resolution images. Try adding more visual detail.",
+        results: data,
+        aiProvider: data.aiProvider || 'AI assistant',
+      }])
+    } catch (error) {
+      setMessages(old => [...old, { role: 'assistant', text: error.message || 'I could not complete the image search. Please try again.' }])
+    } finally { setBusy(false) }
   }
-  const toggle = id => setSelected(old => old.includes(id) ? old.filter(x => x !== id) : [...old, id])
-  const selectedItems = (results?.scenes || []).flatMap(scene => (scene.images || [])
-    .filter(image => selected.includes(image.selectionId))
-    .map(image => ({ ...image, driveFileId: image.sourceType === 'drive' ? image.id : undefined, sceneTitle: scene.title })))
+  const toggle = id => setSelected(old => old.includes(id) ? old.filter(x => x !== id) : old.length >= 20 ? old : [...old, id])
   const download = async () => {
+    if (!selectedItems.length || downloading) return
     setDownloading(true)
     try { await downloadScriptImagePack(selectedItems, drive); notify('Your image ZIP is ready.') }
     catch (error) { notify(error.message || 'ZIP download failed.') }
     finally { setDownloading(false) }
   }
   return <div className="modal-backdrop script-modal-backdrop" onClick={onClose}>
-    <div className="script-studio" onClick={event => event.stopPropagation()}>
-      <div className="script-studio-header"><div><span className="eyebrow">AI-POWERED WORKFLOW</span><h2>Script to Images</h2><p>Turn your script into a scene-by-scene image pack.</p></div><button className="modal-close" onClick={onClose}><X size={18}/></button></div>
-      <label className="script-label">VIDEO SCRIPT<textarea value={script} onChange={event => setScript(event.target.value)} placeholder="Paste your complete video script here…"/></label>
-      <div className="script-note"><HardDrive size={14}/> TreasureVault searches your Drive image library first, then uses Google Images for missing matches. Only high-resolution images are shown.</div>
-      <button className="primary-button script-run" onClick={runSearch} disabled={busy || !drive}>{busy ? 'Analysing script and searching…' : 'Find images for my script'} <Sparkles size={16}/></button>
-      {!drive && <p className="script-warning">Connect Google Drive before running the search.</p>}
-      {results && <div className="script-results">
-        <div className="script-results-top"><div><h3>Image results</h3><span>{results.scenes?.length || 0} scenes · {selected.length} selected · {results.libraryImageCount || 0} high-resolution Drive images scanned</span></div><button className="primary-button" disabled={!selected.length || downloading} onClick={download}><Download size={15}/>{downloading ? 'Building ZIP…' : 'Download ZIP'}</button></div>
-        {(results.scenes || []).map((scene,index) => <section className="script-scene" key={scene.id || index}>
-          <div className="script-scene-heading"><span>SCENE {String(index+1).padStart(2,'0')}</span><h4>{scene.title}</h4><p>{scene.visualBrief}</p></div>
-          <div className="script-image-grid">{(scene.images || []).map(image => <label className={'script-image-card ' + (selected.includes(image.selectionId) ? 'selected' : '')} key={image.selectionId}>
-            <div className="script-image-thumb"><img src={image.thumbnailUrl} alt={image.title} loading="lazy"/><input type="checkbox" checked={selected.includes(image.selectionId)} disabled={!selected.includes(image.selectionId) && selected.length >= 20} onChange={() => toggle(image.selectionId)}/></div>
-            <div className="script-image-info"><strong title={image.title}>{image.title}</strong><span>{image.width && image.height ? image.width+' × '+image.height : 'Resolution unavailable'} · {image.sourceType === 'drive' ? 'Your Drive' : image.sourceName || 'Google Images'}</span>{image.sourceUrl && <a href={image.sourceUrl} target="_blank" rel="noreferrer" onClick={event => event.stopPropagation()}>View source ↗</a>}</div>
-          </label>)}</div>
-          {!scene.images?.length && <p className="script-no-images">No qualifying images found for this scene.</p>}
-        </section>)}
-        <p className="script-disclaimer">Google Images results are not pre-cleared for reuse. Check the original source and permissions before publishing.</p>
-      </div>}
+    <div className="script-studio script-chat-workspace" onClick={event => event.stopPropagation()}>
+      <header className="script-chat-header">
+        <div className="script-chat-brand">
+          <div className="script-chat-mark"><Sparkles size={17}/></div>
+          <div><span className="eyebrow">TREASUREVAULT AI</span><h2>Creative Assistant</h2><p>Script breakdown · Image discovery · Asset packs</p></div>
+        </div>
+        <div className="script-chat-header-actions">
+          <span className="script-provider-pill"><i/>{lastProvider || 'Gemini + Groq backup'}</span>
+          {selectedItems.length > 0 && <button className="primary-button script-download-top" onClick={download} disabled={downloading}><Download size={14}/>{downloading ? 'Preparing ZIP…' : 'Download ' + selectedItems.length}</button>}
+          <button className="modal-close" onClick={onClose} aria-label="Close assistant"><X size={18}/></button>
+        </div>
+      </header>
+      <div className="script-chat-context"><HardDrive size={14}/><span>{drive ? 'Drive connected · Your library is searched before Google Images' : 'Connect Google Drive to search your personal library'}</span><span className="script-quality-pill">1920×1080 minimum</span></div>
+      <main className="script-chat-messages">
+        {messages.map((message, index) => <article className={'script-chat-message ' + message.role} key={index}>
+          <div className="script-chat-avatar">{message.role === 'assistant' ? <Sparkles size={15}/> : 'Y'}</div>
+          <div className="script-chat-body">
+            <div className="script-chat-author">{message.role === 'assistant' ? 'TreasureVault' : 'You'}{message.aiProvider && <span>{message.aiProvider}</span>}</div>
+            <p className="script-chat-text">{message.text}</p>
+            {message.results && <div className="script-chat-results">
+              <div className="script-results-summary"><strong>{message.results.scenes?.length || 0} scenes identified</strong><span>{message.results.libraryImageCount || 0} high-resolution Drive images scanned</span></div>
+              {(message.results.scenes || []).map((scene, sceneIndex) => <section className="script-scene" key={scene.id || sceneIndex}>
+                <div className="script-scene-heading"><span>SCENE {String(sceneIndex + 1).padStart(2, '0')}</span><h4>{scene.title}</h4><p>{scene.visualBrief}</p></div>
+                <div className="script-image-grid">{(scene.images || []).map(image => <label className={'script-image-card ' + (selected.includes(image.selectionId) ? 'selected' : '')} key={image.selectionId}>
+                  <div className="script-image-thumb"><img src={image.thumbnailUrl} alt={image.title} loading="lazy"/><input type="checkbox" checked={selected.includes(image.selectionId)} disabled={!selected.includes(image.selectionId) && selected.length >= 20} onChange={() => toggle(image.selectionId)}/></div>
+                  <div className="script-image-info"><strong title={image.title}>{image.title}</strong><span>{image.width && image.height ? image.width + ' × ' + image.height : 'Resolution unavailable'} · {image.sourceType === 'drive' ? 'Your Drive' : image.sourceName || 'Google Images'}</span>{image.sourceUrl && <a href={image.sourceUrl} target="_blank" rel="noreferrer" onClick={event => event.stopPropagation()}>View source ↗</a>}</div>
+                </label>)}</div>
+                {!scene.images?.length && <p className="script-no-images">No qualifying images found for this scene.</p>}
+              </section>)}
+              <p className="script-disclaimer">Google Images results are not pre-cleared for reuse. Check original source permissions before publishing.</p>
+            </div>}
+          </div>
+        </article>)}
+        {busy && <div className="script-thinking"><span/><span/><span/> Analysing script and searching for images…</div>}
+      </main>
+      <footer className="script-chat-composer-wrap">
+        {!drive && <p className="script-warning">Connect Google Drive from the main library before using the assistant.</p>}
+        <div className="script-chat-composer">
+          <textarea value={prompt} onChange={event => setPrompt(event.target.value)} onKeyDown={event => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); runSearch() } }} placeholder="Paste your video script here… (Enter to send, Shift + Enter for a new line)" rows={3} disabled={busy}/>
+          <div className="script-composer-bottom"><span>Up to 12,000 characters · Images only · High resolution</span><button className="primary-button" onClick={runSearch} disabled={busy || !prompt.trim() || !drive}>{busy ? 'Working…' : 'Find images'} <Sparkles size={15}/></button></div>
+        </div>
+        <p className="script-chat-footnote">AI suggestions can be imperfect. Always review image sources and usage rights.</p>
+      </footer>
     </div>
   </div>
 }
-
 function App() {
   const [active, setActive] = useState('all')
   const [query, setQuery] = useState('')
