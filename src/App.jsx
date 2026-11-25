@@ -100,7 +100,7 @@ function ScriptImageStudio({ drive, onClose, notify }) {
         {(results.scenes || []).map((scene,index) => <section className="script-scene" key={scene.id || index}>
           <div className="script-scene-heading"><span>SCENE {String(index+1).padStart(2,'0')}</span><h4>{scene.title}</h4><p>{scene.visualBrief}</p></div>
           <div className="script-image-grid">{(scene.images || []).map(image => <label className={'script-image-card ' + (selected.includes(image.selectionId) ? 'selected' : '')} key={image.selectionId}>
-            <div className="script-image-thumb"><img src={image.thumbnailUrl} alt={image.title} loading="lazy"/><input type="checkbox" checked={selected.includes(image.selectionId)} onChange={() => toggle(image.selectionId)}/></div>
+            <div className="script-image-thumb"><img src={image.thumbnailUrl} alt={image.title} loading="lazy"/><input type="checkbox" checked={selected.includes(image.selectionId)} disabled={!selected.includes(image.selectionId) && selected.length >= 20} onChange={() => toggle(image.selectionId)}/></div>
             <div className="script-image-info"><strong title={image.title}>{image.title}</strong><span>{image.width && image.height ? image.width+' × '+image.height : 'Resolution unavailable'} · {image.sourceType === 'drive' ? 'Your Drive' : image.sourceName || 'Google Images'}</span>{image.sourceUrl && <a href={image.sourceUrl} target="_blank" rel="noreferrer" onClick={event => event.stopPropagation()}>View source ↗</a>}</div>
           </label>)}</div>
           {!scene.images?.length && <p className="script-no-images">No qualifying images found for this scene.</p>}
