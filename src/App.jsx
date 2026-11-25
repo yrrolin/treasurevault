@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useState } from 'react'
-import { connectGoogleDrive, uploadDriveFile, classifyFile, listDriveAssets, DRIVE_FOLDERS } from './lib/googleDrive'
+import { connectGoogleDrive, uploadDriveFile, classifyFile, listDriveAssets, moveDriveFile, downloadDriveFile, DRIVE_FOLDERS } from './lib/googleDrive'
 import { supabase } from './lib/supabase'
 import {
   Aperture, ArrowDownUp, AudioLines, Bookmark, Check, ChevronDown,
   ChevronLeft, ChevronRight, CircleHelp, Clapperboard, Cloud, Command,
-  Disc3, FileArchive, FileImage, FileVideo, Filter, Folder, FolderOpen,
+  Disc3, Download, ExternalLink, FileArchive, FileImage, FileVideo, Filter, Folder, FolderInput, FolderOpen,
   Grid2X2, HardDrive, Headphones, Image, LayoutGrid, List, Music2,
   Plus, Search, Settings2, SlidersHorizontal, Sparkles, Star, Upload,
   Video, Waves, X
@@ -75,6 +75,9 @@ function App() {
   const [uploadFiles, setUploadFiles] = useState([])
   const [uploadCategory, setUploadCategory] = useState('auto')
   const [dragging, setDragging] = useState(false)
+  const [activeAsset, setActiveAsset] = useState(null)
+  const [movingAsset, setMovingAsset] = useState(false)
+  const [downloadingAsset, setDownloadingAsset] = useState(false)
 
   const visible = useMemo(() => {
     const q = query.trim().toLowerCase()
@@ -85,6 +88,28 @@ function App() {
   }, [assets, active, query, sort])
 
   const currentCategory = categories.find(c => c.id === active)?.label || 'All assets'
+  const moveSelectedAsset = async destinationKey => {
+    if (!activeAsset || !drive || movingAsset) return
+    const destination = drive.folders[destinationKey]
+    if (!destination) { notify('Destination folder is not available. Reconnect Drive.'); return }
+    if (destination.id === activeAsset.folderId) { notify('This file is already in that folder.'); return }
+    setMovingAsset(true)
+    try {
+      await moveDriveFile(drive.token, activeAsset.id, activeAsset.folderId, destination.id)
+      const refreshed = await listDriveAssets(drive.token, drive.folders)
+      setAssets(refreshed)
+      setActiveAsset(refreshed.find(item => item.id === activeAsset.id) || null)
+      notify('Moved to ' + destination.name + '.')
+    } catch (error) { notify(error.message || 'Could not move file.') }
+    finally { setMovingAsset(false) }
+  }
+  const downloadSelectedAsset = async () => {
+    if (!activeAsset || !drive || downloadingAsset) return
+    setDownloadingAsset(true)
+    try { await downloadDriveFile(drive.token, activeAsset.id, activeAsset.name); notify('Download started.') }
+    catch (error) { notify(error.message || 'Download failed.') }
+    finally { setDownloadingAsset(false) }
+  }
   const toggleFavorite = id => setFavorites(old => old.includes(id) ? old.filter(x => x !== id) : [...old, id])
   const notify = message => { setToast(message); window.setTimeout(() => setToast(''), 4200) }
   const connectDrive = async () => {
@@ -228,7 +253,7 @@ function App() {
 
           {loadingAssets ? <div className="empty-state"><Cloud size={24} /><h3>Reading your Drive library…</h3><p>Fetching files from your Editing Assets folders.</p></div> : visible.length ? <div className={view === 'grid' ? 'asset-grid' : 'asset-list'}>
             {visible.map(item => <article key={item.id} className={`asset-card ${selected.includes(item.id) ? 'asset-selected' : ''}`}>
-              <div className="asset-preview-wrap" onClick={() => setSelected(old => old.includes(item.id) ? old.filter(x => x !== item.id) : [...old, item.id])}>
+              <div className="asset-preview-wrap" onClick={() => setActiveAsset(item)}>
                 <AssetPreview item={item} />
                 <span className="source-badge"><HardDrive size={11} /> DRIVE</span>
                 <button className={`favorite-button ${favorites.includes(item.id) ? 'is-favorite' : ''}`} onClick={e => { e.stopPropagation(); toggleFavorite(item.id) }} title="Toggle favorite"><Star size={15} fill={favorites.includes(item.id) ? 'currentColor' : 'none'} /></button>
@@ -246,6 +271,14 @@ function App() {
       </div>
     </main>
 
+    {activeAsset && <div className="drawer-backdrop" onClick={() => setActiveAsset(null)}><aside className="asset-drawer" onClick={e => e.stopPropagation()}>
+      <div className="drawer-header"><div><span className="eyebrow">ASSET DETAILS</span><h2>Preview</h2></div><button className="modal-close" onClick={() => setActiveAsset(null)} aria-label="Close details"><X size={18} /></button></div>
+      <div className="drawer-preview"><AssetPreview item={activeAsset} /><span className="drawer-kind">{activeAsset.kind}</span></div>
+      <div className="drawer-file-title"><h3>{activeAsset.name}</h3><a href={activeAsset.webViewLink} target="_blank" rel="noreferrer" title="Open in Google Drive"><ExternalLink size={16} /></a></div>
+      <div className="drawer-actions"><button className="primary-button" onClick={downloadSelectedAsset} disabled={downloadingAsset}><Download size={15} />{downloadingAsset ? 'Preparing…' : 'Download'}</button><a className="drawer-drive-link" href={activeAsset.webViewLink} target="_blank" rel="noreferrer">Open in Drive <ExternalLink size={13} /></a></div>
+      <section className="drawer-section"><h4>FILE INFORMATION</h4><div className="detail-row"><span>File type</span><strong>{activeAsset.ext || '—'}</strong></div><div className="detail-row"><span>Format</span><strong>{activeAsset.mimeType || 'Unknown'}</strong></div><div className="detail-row"><span>File size</span><strong>{activeAsset.size || '—'}</strong></div><div className="detail-row"><span>Resolution</span><strong>{activeAsset.resolution || '—'}</strong></div><div className="detail-row"><span>Duration</span><strong>{activeAsset.duration || '—'}</strong></div><div className="detail-row"><span>Modified</span><strong>{activeAsset.date || '—'}</strong></div><div className="detail-row"><span>Current folder</span><strong>{activeAsset.folderName || activeAsset.tag || '—'}</strong></div></section>
+      <section className="drawer-section"><h4><FolderInput size={14} /> MOVE TO FOLDER</h4><p className="drawer-help">Move this file to another folder inside Editing Assets.</p><select className="move-select" value={activeAsset.type} disabled={movingAsset} onChange={e => moveSelectedAsset(e.target.value)}>{DRIVE_FOLDERS.map(folder => <option key={folder.key} value={folder.key}>{folder.name}</option>)}</select>{movingAsset && <span className="moving-note">Moving file…</span>}</section>
+    </aside></div>}
     {showUpload && <div className="modal-backdrop" onClick={() => setShowUpload(false)}><div className="upload-modal" onClick={e => e.stopPropagation()}>
       <button className="modal-close" onClick={() => setShowUpload(false)}><X size={17} /></button>
       <div className="modal-icon"><Upload size={21} /></div><h2>Upload assets to your vault</h2><p>Files are automatically sorted into the matching folder inside My Drive / Editing Assets. Original files stay in your Drive.</p>
