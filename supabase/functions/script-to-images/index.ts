@@ -32,10 +32,10 @@ function scoreAsset(name: string, description: string, query: string) {
   return score;
 }
 
-const SCENE_PROMPT = (script: string) => \`Break this video script into a maximum of 6 visual scenes for an editor sourcing still images. Keep scenes in script order. Each scene must have a concise title, a visualBrief describing the exact image needed, and a Google Images searchQuery with concrete visual subjects, locations, objects, lighting and composition. Avoid abstract-only queries. Return JSON only in this shape: {"scenes":[{"id":"scene-1","title":"...","visualBrief":"...","searchQuery":"..."}]}. Script:\n\n\${script}\`;
+const SCENE_PROMPT = (script: string) => `Break this video script into a maximum of 6 visual scenes for an editor sourcing still images. Keep scenes in script order. Each scene must have a concise title, a visualBrief describing the exact image needed, and a Google Images searchQuery with concrete visual subjects, locations, objects, lighting and composition. Avoid abstract-only queries. Return JSON only in this shape: {"scenes":[{"id":"scene-1","title":"...","visualBrief":"...","searchQuery":"..."}]}. Script:\n\n${script}`;
 
 function parseSceneResponse(raw: string) {
-  const cleaned = raw.trim().replace(/^\`\`\`(?:json)?\s*/i, "").replace(/\s*\`\`\`$/, "");
+  const cleaned = raw.trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "");
   const parsed = JSON.parse(cleaned);
   if (!Array.isArray(parsed.scenes)) throw new Error("The AI returned an invalid scene breakdown.");
   const scenes = parsed.scenes.slice(0, 6).map((scene: Record<string, unknown>, index: number) => ({
