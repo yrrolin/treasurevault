@@ -32,29 +32,85 @@ function scoreAsset(name: string, description: string, query: string) {
   return score;
 }
 
-async function parseScript(script: string, geminiKey: string) {
-  const prompt = `Break this video script into a maximum of 6 visual scenes for an editor sourcing still images. Keep scenes in script order. Each scene must have a concise title, a visualBrief describing the exact image needed, and a Google Images searchQuery with concrete visual subjects, locations, objects, lighting and composition. Avoid abstract-only queries. Return JSON only in this shape: {"scenes":[{"id":"scene-1","title":"...","visualBrief":"...","searchQuery":"..."}]}. Script:\n\n${script}`;
-  const response = await fetch("https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent?key=" + encodeURIComponent(geminiKey), {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      contents: [{ role: "user", parts: [{ text: prompt }] }],
-      generationConfig: { responseMimeType: "application/json", temperature: 0.25 },
-    }),
-  });
-  const data = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(data.error?.message || "Gemini could not analyse the script.");
-  const text = data.candidates?.[0]?.content?.parts?.map((part: { text?: string }) => part.text || "").join("") || "";
-  const parsed = JSON.parse(text);
-  if (!Array.isArray(parsed.scenes)) throw new Error("Gemini returned an invalid scene breakdown.");
-  return parsed.scenes.slice(0, 6).map((scene: Record<string, unknown>, index: number) => ({
+const SCENE_PROMPT = (script: string) => \`Break this video script into a maximum of 6 visual scenes for an editor sourcing still images. Keep scenes in script order. Each scene must have a concise title, a visualBrief describing the exact image needed, and a Google Images searchQuery with concrete visual subjects, locations, objects, lighting and composition. Avoid abstract-only queries. Return JSON only in this shape: {"scenes":[{"id":"scene-1","title":"...","visualBrief":"...","searchQuery":"..."}]}. Script:\n\n\${script}\`;
+
+function parseSceneResponse(raw: string) {
+  const cleaned = raw.trim().replace(/^\`\`\`(?:json)?\s*/i, "").replace(/\s*\`\`\`$/, "");
+  const parsed = JSON.parse(cleaned);
+  if (!Array.isArray(parsed.scenes)) throw new Error("The AI returned an invalid scene breakdown.");
+  const scenes = parsed.scenes.slice(0, 6).map((scene: Record<string, unknown>, index: number) => ({
     id: "scene-" + (index + 1),
     title: String(scene.title || "Scene " + (index + 1)).slice(0, 120),
     visualBrief: String(scene.visualBrief || "").slice(0, 500),
     searchQuery: String(scene.searchQuery || scene.visualBrief || scene.title || "").slice(0, 250),
   }));
+  if (!scenes.length) throw new Error("The AI could not extract any scenes from this script.");
+  return scenes;
 }
 
+async function parseWithGemini(script: string, apiKey: string) {
+  const response = await fetch("https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent?key=" + encodeURIComponent(apiKey), {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      contents: [{ role: "user", parts: [{ text: SCENE_PROMPT(script) }] }],
+      generationConfig: { responseMimeType: "application/json", temperature: 0.25 },
+    }),
+    signal: AbortSignal.timeout(25000),
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error("Gemini (" + response.status + "): " + (data.error?.message || "Request failed."));
+  const raw = data.candidates?.[0]?.content?.parts?.map((part: { text?: string }) => part.text || "").join("") || "";
+  return parseSceneResponse(raw);
+}
+
+async function parseWithGroq(script: string, apiKey: string) {
+  const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: "Bearer " + apiKey },
+    body: JSON.stringify({
+      model: "openai/gpt-oss-20b",
+      messages: [
+        { role: "system", content: "You are a video editor's visual research assistant. Return valid JSON only with a scenes array. Each scene must have title, visualBrief, and searchQuery. Maximum 6 scenes." },
+        { role: "user", content: SCENE_PROMPT(script) },
+      ],
+      temperature: 0.25,
+      max_completion_tokens: 3000,
+      response_format: { type: "json_object" },
+    }),
+    signal: AbortSignal.timeout(25000),
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error("Groq (" + response.status + "): " + (data.error?.message || "Request failed."));
+  const raw = data.choices?.[0]?.message?.content || "";
+  return parseSceneResponse(raw);
+}
+
+async function parseScript(script: string, geminiKey: string, groqKey: string) {
+  let geminiError: Error | null = null;
+  if (geminiKey) {
+    try {
+      return { scenes: await parseWithGemini(script, geminiKey), aiProvider: "Gemini 3.8 Flash" };
+    } catch (error) {
+      geminiError = error instanceof Error ? error : new Error("Gemini request failed.");
+    }
+  }
+  if (groqKey) {
+    try {
+      const scenes = await parseWithGroq(script, groqKey);
+      return {
+        scenes,
+        aiProvider: "Groq GPT-OSS 20B",
+        fallbackReason: geminiError?.message || "Gemini is not configured; backup model used.",
+      };
+    } catch (error) {
+      const groqError = error instanceof Error ? error.message : "Groq request failed.";
+      throw new Error((geminiError ? geminiError.message + " Backup also failed: " : "Backup model failed: ") + groqError);
+    }
+  }
+  if (geminiError) throw geminiError;
+  throw new Error("No AI provider is configured. Add GEMINI_API_KEY or GROQ_API_KEY to Supabase Edge Function secrets.");
+}
 async function listLibraryImages(token: string, folderId: string) {
   const files: Record<string, unknown>[] = [];
   let pageToken = "";
@@ -110,13 +166,13 @@ async function googleImages(query: string, apiKey: string, size: string) {
   })).filter((image: Record<string, unknown>) => typeof image.originalUrl === "string" && String(image.originalUrl).startsWith("https://") && quality(Number(image.width), Number(image.height)) && String(image.thumbnailUrl).startsWith("https://"));
 }
 
-async function handleSearch(body: Record<string, unknown>, token: string, geminiKey: string, serpKey: string) {
+async function handleSearch(body: Record<string, unknown>, token: string, geminiKey: string, groqKey: string, serpKey: string) {
   const script = String(body.script || "").trim();
   const folderId = String(body.imageFolderId || "");
   if (!script || script.length > 12000) throw new Error("Paste a script between 1 and 12,000 characters.");
   if (!folderId) throw new Error("The Editing Assets / Images & Graphics folder is missing.");
-  const scenes = await parseScript(script, geminiKey);
-  if (!scenes.length) throw new Error("No scenes could be extracted from the script.");
+  const ai = await parseScript(script, geminiKey, groqKey);
+  const scenes = ai.scenes;
   const library = await listLibraryImages(token, folderId);
   const results = [];
   for (const scene of scenes) {
@@ -145,7 +201,7 @@ async function handleSearch(body: Record<string, unknown>, token: string, gemini
       images: [...local, ...external].slice(0, 10).map(({ score: _score, description: _description, ...image }) => image),
     });
   }
-  return { scenes: results, qualityTarget: "1920x1080 minimum; 2K/4K preferred", libraryImageCount: library.length };
+  return { scenes: results, aiProvider: ai.aiProvider, fallbackReason: ai.fallbackReason || null, qualityTarget: "1920x1080 minimum; 2K/4K preferred", libraryImageCount: library.length };
 }
 
 function safeRemoteUrl(value: string) {
@@ -204,10 +260,12 @@ Deno.serve(async (req) => {
     if (!identityResponse.ok) return json({ error: "Your Google Drive session expired. Reconnect Drive and try again." }, 401);
     const action = String(body.action || "search");
     if (action === "download") return await handleDownload(body, token);
-    const geminiKey = Deno.env.get("GEMINI_API_KEY");
-    const serpKey = Deno.env.get("SERPAPI_API_KEY");
-    if (!geminiKey || !serpKey) return json({ error: "Backend setup is incomplete. Add GEMINI_API_KEY and SERPAPI_API_KEY to your Supabase Edge Function secrets." }, 503);
-    return json(await handleSearch(body, token, geminiKey, serpKey));
+    const geminiKey = Deno.env.get("GEMINI_API_KEY") || "";
+    const groqKey = Deno.env.get("GROQ_API_KEY") || "";
+    const serpKey = Deno.env.get("SERPAPI_API_KEY") || "";
+    if (!geminiKey && !groqKey) return json({ error: "Add at least one AI provider secret: GEMINI_API_KEY or GROQ_API_KEY." }, 503);
+    if (!serpKey) return json({ error: "Add SERPAPI_API_KEY to your Supabase Edge Function secrets." }, 503);
+    return json(await handleSearch(body, token, geminiKey, groqKey, serpKey));
   } catch (error) {
     return json({ error: error instanceof Error ? error.message : "Unexpected Script-to-Images error." }, 400);
   }
