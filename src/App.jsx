@@ -39,35 +39,20 @@ function Thumb({ item }) {
   </div>
 }
 
-function AssetPreview({ item, token }) {
-  const [previewUrl, setPreviewUrl] = useState('')
-  useEffect(() => {
-    let objectUrl = ''
-    let cancelled = false
-    const load = async () => {
-      if (!token || (!item.thumbnailLink && item.kind !== 'IMAGE')) return
-      try {
-        const url = item.thumbnailLink || ('https://www.googleapis.com/drive/v3/files/' + item.id + '?alt=media')
-        const response = await fetch(url, { headers: { Authorization: 'Bearer ' + token } })
-        if (!response.ok) throw new Error('Preview unavailable')
-        const blob = await response.blob()
-        if (!blob.type.startsWith('image/')) throw new Error('Not an image preview')
-        objectUrl = URL.createObjectURL(blob)
-        if (!cancelled) setPreviewUrl(objectUrl)
-      } catch {
-        // Keep the file-type fallback when Drive has no thumbnail or preview permission.
-      }
-    }
-    load()
-    return () => {
-      cancelled = true
-      if (objectUrl) URL.revokeObjectURL(objectUrl)
-    }
-  }, [item.id, item.kind, item.thumbnailLink, token])
-
-  if (!previewUrl) return <Thumb item={item} />
+function AssetPreview({ item }) {
+  const [failed, setFailed] = useState(false)
+  const previewUrl = item.thumbnailLink || (item.kind === 'IMAGE' || item.kind === 'VIDEO'
+    ? 'https://drive.google.com/thumbnail?id=' + encodeURIComponent(item.id) + '&sz=w800'
+    : '')
+  if (!previewUrl || failed) return <Thumb item={item} />
   return <div className="drive-preview">
-    <img src={previewUrl} alt={item.name} loading="lazy" />
+    <img
+      src={previewUrl}
+      alt={item.name}
+      loading="lazy"
+      referrerPolicy="no-referrer"
+      onError={() => setFailed(true)}
+    />
     {item.kind === 'VIDEO' && <span className="video-preview-play"><Video size={19} fill="currentColor" /></span>}
   </div>
 }
@@ -244,7 +229,7 @@ function App() {
           {loadingAssets ? <div className="empty-state"><Cloud size={24} /><h3>Reading your Drive library…</h3><p>Fetching files from your Editing Assets folders.</p></div> : visible.length ? <div className={view === 'grid' ? 'asset-grid' : 'asset-list'}>
             {visible.map(item => <article key={item.id} className={`asset-card ${selected.includes(item.id) ? 'asset-selected' : ''}`}>
               <div className="asset-preview-wrap" onClick={() => setSelected(old => old.includes(item.id) ? old.filter(x => x !== item.id) : [...old, item.id])}>
-                <AssetPreview item={item} token={drive?.token} />
+                <AssetPreview item={item} />
                 <span className="source-badge"><HardDrive size={11} /> DRIVE</span>
                 <button className={`favorite-button ${favorites.includes(item.id) ? 'is-favorite' : ''}`} onClick={e => { e.stopPropagation(); toggleFavorite(item.id) }} title="Toggle favorite"><Star size={15} fill={favorites.includes(item.id) ? 'currentColor' : 'none'} /></button>
                 {item.duration !== '—' && <span className="duration">{item.duration}</span>}
