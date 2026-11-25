@@ -1,4 +1,6 @@
 import { useMemo, useState } from 'react'
+import { connectGoogleDrive, uploadDriveFile, classifyFile, DRIVE_FOLDERS } from './lib/googleDrive'
+import { supabase } from './lib/supabase'
 import {
   Aperture, ArrowDownUp, AudioLines, Bookmark, Check, ChevronDown,
   ChevronLeft, ChevronRight, CircleHelp, Clapperboard, Cloud, Command,
@@ -54,6 +56,12 @@ function App() {
   const [showFilters, setShowFilters] = useState(false)
   const [showUpload, setShowUpload] = useState(false)
   const [toast, setToast] = useState('')
+  const [drive, setDrive] = useState(null)
+  const [connecting, setConnecting] = useState(false)
+  const [uploading, setUploading] = useState(false)
+  const [uploadFiles, setUploadFiles] = useState([])
+  const [uploadCategory, setUploadCategory] = useState('auto')
+  const [dragging, setDragging] = useState(false)
 
   const visible = useMemo(() => {
     const q = query.trim().toLowerCase()
@@ -65,7 +73,54 @@ function App() {
 
   const currentCategory = categories.find(c => c.id === active)?.label || 'All assets'
   const toggleFavorite = id => setFavorites(old => old.includes(id) ? old.filter(x => x !== id) : [...old, id])
-  const notify = message => { setToast(message); window.setTimeout(() => setToast(''), 2600) }
+  const notify = message => { setToast(message); window.setTimeout(() => setToast(''), 4200) }
+  const connectDrive = async () => {
+    setConnecting(true)
+    try {
+      const connected = await connectGoogleDrive()
+      setDrive(connected)
+      notify('Google Drive connected. Editing Assets and its eight subfolders are ready.')
+    } catch (error) {
+      notify(error.message || 'Could not connect Google Drive.')
+    } finally { setConnecting(false) }
+  }
+  const handleUpload = async () => {
+    if (!drive) { notify('Connect Google Drive before uploading.'); return }
+    if (!uploadFiles.length) { notify('Choose at least one file to upload.'); return }
+    setUploading(true)
+    let completed = 0
+    try {
+      for (const file of uploadFiles) {
+        const key = uploadCategory === 'auto' ? classifyFile(file) : uploadCategory
+        const folder = drive.folders[key]
+        if (!folder) throw new Error('Destination folder missing. Reconnect Google Drive.')
+        const uploaded = await uploadDriveFile(drive.token, folder.id, file)
+        const sessionResult = supabase ? await supabase.auth.getSession() : null
+        const session = sessionResult?.data?.session
+        if (session?.user) {
+          const ext = file.name.includes('.') ? file.name.split('.').pop().toLowerCase() : null
+          const typeMap = { projects: 'project', transitions: 'transition', footage: 'footage', broll: 'broll', sfx: 'sfx', music: 'music', images: 'image', archives: 'archive' }
+          const { error } = await supabase.from('assets').upsert({
+            user_id: session.user.id, drive_file_id: uploaded.id, drive_name: uploaded.name,
+            display_name: uploaded.name, asset_type: typeMap[key] || 'other',
+            mime_type: uploaded.mimeType, file_extension: ext,
+            file_size_bytes: Number(uploaded.size || file.size),
+            drive_web_view_link: uploaded.webViewLink || null,
+            metadata: { drive_folder: folder.name, root_folder: drive.root.name },
+          }, { onConflict: 'user_id,drive_file_id' })
+          if (error) throw error
+        }
+        completed++
+      }
+      const sessionResult = supabase ? await supabase.auth.getSession() : null
+      const hasSession = !!sessionResult?.data?.session
+      notify('Uploaded ' + completed + ' file(s) to Google Drive.' + (hasSession ? ' Metadata saved.' : ' Supabase sign-in is still needed to sync metadata.'))
+      setUploadFiles([])
+      setShowUpload(false)
+    } catch (error) {
+      notify('Upload stopped after ' + completed + ' file(s): ' + (error.message || 'Unknown error'))
+    } finally { setUploading(false) }
+  }
 
   return <div className="app-shell">
     <aside className="sidebar">
@@ -99,10 +154,10 @@ function App() {
       </div>
 
       <div className="storage-card">
-        <div className="storage-top"><div className="drive-icon"><HardDrive size={15} /></div><span>STORAGE</span><span className="connect-status"><i /> Not connected</span></div>
-        <div className="storage-title">Connect your Google Drive</div>
-        <p>Your files stay in your Drive. TreasureVault organizes and finds them.</p>
-        <button className="connect-button" onClick={() => notify('Google Drive connection is the next integration step.')}>Connect Drive <ArrowDownUp size={13} /></button>
+        <div className="storage-top"><div className="drive-icon"><HardDrive size={15} /></div><span>STORAGE</span><span className="connect-status"><i /> {drive ? "Connected" : "Not connected"}</span></div>
+        <div className="storage-title">{drive ? "Editing Assets is ready" : "Connect your Google Drive"}</div>
+        <p>{drive ? "Eight asset folders are ready in My Drive." : "Your files stay in your Drive. TreasureVault organizes and finds them."}</p>
+        <button className="connect-button" disabled={connecting} onClick={connectDrive}>{connecting ? "Connecting…" : drive ? "Reconnect Drive" : "Connect Drive"} <ArrowDownUp size={13} /></button>
       </div>
       <div className="sidebar-bottom">
         <button className="nav-item" onClick={() => notify('Settings will be added as integrations are connected.')}><Settings2 size={17} /><span>Settings</span></button>
@@ -175,9 +230,17 @@ function App() {
 
     {showUpload && <div className="modal-backdrop" onClick={() => setShowUpload(false)}><div className="upload-modal" onClick={e => e.stopPropagation()}>
       <button className="modal-close" onClick={() => setShowUpload(false)}><X size={17} /></button>
-      <div className="modal-icon"><Upload size={21} /></div><h2>Add assets to your vault</h2><p>Connect Google Drive to import files directly into your personal library. Your original files will remain in Drive.</p>
-      <button className="primary-button modal-cta" onClick={() => { setShowUpload(false); notify('Drive OAuth setup is next. No files have been uploaded yet.') }}>Set up Google Drive <ChevronRight size={16} /></button>
-      <span className="modal-footnote"><Check size={13} /> Your files stay in your own Google Drive</span>
+      <div className="modal-icon"><Upload size={21} /></div><h2>Upload assets to your vault</h2><p>Files are automatically sorted into the matching folder inside My Drive / Editing Assets. Original files stay in your Drive.</p>
+      {!drive ? <button className="primary-button modal-cta" onClick={connectDrive} disabled={connecting}>{connecting ? 'Connecting…' : 'Connect Google Drive'} <ChevronRight size={16} /></button> : <>
+        <div className={dragging ? 'drop-zone drop-zone-active' : 'drop-zone'} onDragOver={e => { e.preventDefault(); setDragging(true) }} onDragLeave={() => setDragging(false)} onDrop={e => { e.preventDefault(); setDragging(false); setUploadFiles(old => [...old, ...Array.from(e.dataTransfer.files)]) }}>
+          <Upload size={23} /><strong>Drop files here</strong><span>or choose files from your computer</span>
+          <label className="choose-files">Choose files<input type="file" multiple onChange={e => setUploadFiles(old => [...old, ...Array.from(e.target.files || [])])} /></label>
+        </div>
+        {uploadFiles.length > 0 && <div className="upload-file-list">{uploadFiles.map((file, i) => <div key={i}><span>{file.name}</span><small>{(file.size / 1048576).toFixed(1)} MB · {uploadCategory === 'auto' ? DRIVE_FOLDERS.find(f => f.key === classifyFile(file))?.name : DRIVE_FOLDERS.find(f => f.key === uploadCategory)?.name}</small><button onClick={() => setUploadFiles(old => old.filter((_, index) => index !== i))}>×</button></div>)}</div>}
+        <label className="upload-category">Destination folder<select value={uploadCategory} onChange={e => setUploadCategory(e.target.value)}><option value="auto">Automatically detect from file type</option>{DRIVE_FOLDERS.map(folder => <option key={folder.key} value={folder.key}>{folder.name}</option>)}</select></label>
+        <button className="primary-button modal-cta" disabled={uploading || !uploadFiles.length} onClick={handleUpload}>{uploading ? 'Uploading…' : 'Upload ' + uploadFiles.length + ' file' + (uploadFiles.length === 1 ? '' : 's') + ' to Drive'} <Upload size={15} /></button>
+      </>}
+      <span className="modal-footnote"><Check size={13} /> Uploads go directly to your Google Drive</span>
     </div></div>}
     {toast && <div className="toast"><Check size={15} />{toast}</div>}
   </div>
