@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { connectGoogleDrive, uploadDriveFile, classifyFile, listDriveAssets, DRIVE_FOLDERS } from './lib/googleDrive'
 import { supabase } from './lib/supabase'
 import {
@@ -36,6 +36,39 @@ function Thumb({ item }) {
     <Icon size={25} strokeWidth={1.45} />
     <span className="thumb-ext">{item.ext}</span>
     {item.kind === 'VIDEO' && <span className="play-mark">▶</span>}
+  </div>
+}
+
+function AssetPreview({ item, token }) {
+  const [previewUrl, setPreviewUrl] = useState('')
+  useEffect(() => {
+    let objectUrl = ''
+    let cancelled = false
+    const load = async () => {
+      if (!token || (!item.thumbnailLink && item.kind !== 'IMAGE')) return
+      try {
+        const url = item.thumbnailLink || ('https://www.googleapis.com/drive/v3/files/' + item.id + '?alt=media')
+        const response = await fetch(url, { headers: { Authorization: 'Bearer ' + token } })
+        if (!response.ok) throw new Error('Preview unavailable')
+        const blob = await response.blob()
+        if (!blob.type.startsWith('image/')) throw new Error('Not an image preview')
+        objectUrl = URL.createObjectURL(blob)
+        if (!cancelled) setPreviewUrl(objectUrl)
+      } catch {
+        // Keep the file-type fallback when Drive has no thumbnail or preview permission.
+      }
+    }
+    load()
+    return () => {
+      cancelled = true
+      if (objectUrl) URL.revokeObjectURL(objectUrl)
+    }
+  }, [item.id, item.kind, item.thumbnailLink, token])
+
+  if (!previewUrl) return <AssetPreview item={item} token={drive?.token} />
+  return <div className="drive-preview">
+    <img src={previewUrl} alt={item.name} loading="lazy" />
+    {item.kind === 'VIDEO' && <span className="video-preview-play"><Video size={19} fill="currentColor" /></span>}
   </div>
 }
 
