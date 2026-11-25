@@ -59,3 +59,46 @@
 .move-select:disabled{opacity:.6}
 .moving-note{display:block;margin-top:8px;font-size:10px;color:#a8b9fd}
 @media(max-width:650px){.asset-drawer{padding:18px}.drawer-preview{height:220px}}
+
+/* Script-to-Images studio */
+.heading-actions{display:flex;align-items:center;gap:9px}
+.secondary-ai-button{height:36px;display:flex;align-items:center;gap:7px;padding:0 12px;border:1px solid #3b4660;border-radius:7px;background:#171d2a;color:#c3cefa;font-size:10px;font-weight:600}
+.secondary-ai-button:hover{background:#202a3e;border-color:#64749d}
+.script-modal-backdrop{z-index:40;align-items:center}
+.script-studio{width:min(1000px,100%);max-height:min(90vh,900px);overflow:auto;position:relative;background:#11151c;border:1px solid #343c4d;border-radius:13px;padding:25px;box-shadow:0 25px 80px #000b}
+.script-studio-header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:20px}
+.script-studio-header .eyebrow{margin-bottom:5px}
+.script-studio-header h2{font:700 21px Manrope;margin:0;color:#f0f1f5}
+.script-studio-header p{font-size:11px;color:#8993a3;margin:6px 0 0}
+.script-studio-header .modal-close{position:static;width:32px;height:32px;border:1px solid #303744;border-radius:7px;display:grid;place-items:center}
+.script-label{display:flex;flex-direction:column;gap:8px;font:9px 'DM Mono',monospace;letter-spacing:1px;color:#aab6d5}
+.script-label textarea{width:100%;min-height:145px;resize:vertical;background:#0c1016;border:1px solid #303846;border-radius:8px;padding:13px;color:#e7eaf0;font:12px/1.65 'DM Sans',sans-serif;letter-spacing:0;outline:none}
+.script-label textarea:focus{border-color:#687ba9}
+.script-note{display:flex;align-items:center;gap:8px;margin:12px 0;color:#929caf;font-size:10px;line-height:1.5}
+.script-note svg{flex-shrink:0;color:#a8b9fd}
+.script-run{justify-content:center;width:100%;height:39px}
+.script-run:disabled{opacity:.55;cursor:wait}
+.script-warning{font-size:10px;color:#d4ad78;text-align:center}
+.script-results{margin-top:24px;border-top:1px solid #292f3a;padding-top:20px}
+.script-results-top{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:18px}
+.script-results-top h3{font:600 15px Manrope;margin:0 0 4px}
+.script-results-top span{font-size:9px;color:#858e9d}
+.script-results-top .primary-button{white-space:nowrap}
+.script-scene{padding:16px 0;border-top:1px solid #252c37}
+.script-scene-heading>span{font:9px 'DM Mono',monospace;letter-spacing:1px;color:#9eaddb}
+.script-scene-heading h4{font:600 13px Manrope;margin:5px 0;color:#e7eaf0}
+.script-scene-heading p{font-size:10px;line-height:1.6;color:#929bab;margin:0 0 12px;max-width:780px}
+.script-image-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}
+.script-image-card{min-width:0;overflow:hidden;border:1px solid #2c3340;background:#151a23;border-radius:7px;cursor:pointer}
+.script-image-card.selected{border-color:#8fa4f0;box-shadow:0 0 0 1px #8fa4f033}
+.script-image-thumb{height:120px;position:relative;background:#090c12}
+.script-image-thumb img{width:100%;height:100%;object-fit:cover;display:block}
+.script-image-thumb input{position:absolute;top:8px;right:8px;width:17px;height:17px;accent-color:#a8b9fd;cursor:pointer}
+.script-image-info{padding:8px;display:flex;flex-direction:column;gap:5px}
+.script-image-info strong{font-size:10px;color:#e0e4ed;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.script-image-info span{font:8px 'DM Mono',monospace;color:#8792a5;line-height:1.4}
+.script-image-info a{font-size:9px;color:#b2c0f3;text-decoration:none}
+.script-no-images{font-size:10px;color:#858e9d}
+.script-disclaimer{font-size:9px;line-height:1.5;color:#858e9d;border-top:1px solid #292f3a;padding-top:13px;margin:16px 0 0}
+@media(max-width:800px){.script-image-grid{grid-template-columns:repeat(3,minmax(0,1fr))}}
+@media(max-width:600px){.heading-actions{flex-direction:column;align-items:stretch}.secondary-ai-button{justify-content:center}.script-studio{padding:17px;max-height:94vh}.script-image-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.script-image-thumb{height:110px}.script-results-top{align-items:flex-start;flex-direction:column}.script-results-top .primary-button{width:100%;justify-content:center}}
