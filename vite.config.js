@@ -3,5 +3,6 @@ import react from '@vitejs/plugin-react'
 
 export default defineConfig({
   plugins: [react()],
-  base: '/treasurevault/',
+  // Use relative asset URLs so GitHub Pages can load the app from /treasurevault/.
+  base: './',
 })
