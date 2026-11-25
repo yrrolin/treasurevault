@@ -20,7 +20,7 @@ export async function findScriptImages(script, drive) {
 
 export async function downloadScriptImagePack(selected, drive) {
   if (!selected.length) throw new Error('Select at least one image.')
-  const response = await fetch(SUPABASE_URL.replace(/\\/$/, '') + '/functions/v1/script-to-images', {
+  const response = await fetch(SUPABASE_URL.replace(/\/$/, '') + '/functions/v1/script-to-images', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', apikey: SUPABASE_KEY, Authorization: 'Bearer ' + SUPABASE_KEY },
     body: JSON.stringify({ action: 'download', selected, driveAccessToken: drive.token }),
