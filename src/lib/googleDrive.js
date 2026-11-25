@@ -121,7 +121,7 @@ export async function listDriveAssets(token, folders) {
         q: "'" + driveFolder.id + "' in parents and trashed = false and mimeType != 'application/vnd.google-apps.folder'",
         pageSize: '1000',
         orderBy: 'modifiedTime desc',
-        fields: 'nextPageToken,files(id,name,mimeType,size,modifiedTime,webViewLink,thumbnailLink,imageMediaMetadata,videoMediaMetadata)',
+        fields: 'nextPageToken,files(id,name,mimeType,size,modifiedTime,webViewLink,thumbnailLink,imageMediaMetadata,videoMediaMetadata,thumbnailLink)',
       })
       if (pageToken) params.set('pageToken', pageToken)
       const result = await driveRequest(token, 'files?' + params.toString())
