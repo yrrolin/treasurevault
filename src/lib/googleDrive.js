@@ -89,8 +89,17 @@ export async function connectGoogleDrive() {
     })
     client.requestAccessToken({ prompt: 'consent' })
   })
-  let root = await findFolder(token, 'Editing Assets')
-  if (!root) root = await createFolder(token, 'Editing Assets', 'root')
+  // Use the user's explicitly selected Editing Assets folder; never create a second root.
+  const rootId = '18Ou82zi0rb2t93PlbUODRGfc9eeDU0KF'
+  let root
+  try {
+    root = await driveRequest(token, 'files/' + rootId + '?fields=id,name,mimeType,trashed,webViewLink')
+  } catch {
+    throw new Error('TreasureVault could not access your selected Editing Assets folder. Make sure the Google account you connected has access to it.')
+  }
+  if (root.trashed || root.mimeType !== 'application/vnd.google-apps.folder') {
+    throw new Error('The selected Google Drive item is not an available folder. Check the folder link and try again.')
+  }
   const folders = {}
   for (const folder of DRIVE_FOLDERS) {
     let found = await findFolder(token, folder.name, root.id)
