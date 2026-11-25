@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { connectGoogleDrive, uploadDriveFile, classifyFile, listDriveAssets, moveDriveFile, downloadDriveFile, DRIVE_FOLDERS } from './lib/googleDrive'
 import { supabase } from './lib/supabase'
+import { findScriptImages, downloadScriptImagePack } from './lib/scriptImages'
 import {
   Aperture, ArrowDownUp, AudioLines, Bookmark, Check, ChevronDown,
   ChevronLeft, ChevronRight, CircleHelp, Clapperboard, Cloud, Command,
@@ -57,6 +58,59 @@ function AssetPreview({ item }) {
   </div>
 }
 
+
+function ScriptImageStudio({ drive, onClose, notify }) {
+  const [script, setScript] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [downloading, setDownloading] = useState(false)
+  const [results, setResults] = useState(null)
+  const [selected, setSelected] = useState([])
+  const runSearch = async () => {
+    if (!script.trim()) { notify('Paste your video script first.'); return }
+    if (!drive) { notify('Connect Google Drive first.'); return }
+    setBusy(true); setResults(null); setSelected([])
+    try {
+      const data = await findScriptImages(script, drive)
+      setResults(data)
+      const all = (data.scenes || []).flatMap(scene => scene.images || [])
+      setSelected(all.map(image => image.selectionId))
+      if (!all.length) notify('No high-resolution image matches found. Try a more descriptive script.')
+    } catch (error) { notify(error.message || 'Could not search for images.') }
+    finally { setBusy(false) }
+  }
+  const toggle = id => setSelected(old => old.includes(id) ? old.filter(x => x !== id) : [...old, id])
+  const selectedItems = (results?.scenes || []).flatMap(scene => (scene.images || [])
+    .filter(image => selected.includes(image.selectionId))
+    .map(image => ({ ...image, driveFileId: image.sourceType === 'drive' ? image.id : undefined, sceneTitle: scene.title })))
+  const download = async () => {
+    setDownloading(true)
+    try { await downloadScriptImagePack(selectedItems, drive); notify('Your image ZIP is ready.') }
+    catch (error) { notify(error.message || 'ZIP download failed.') }
+    finally { setDownloading(false) }
+  }
+  return <div className="modal-backdrop script-modal-backdrop" onClick={onClose}>
+    <div className="script-studio" onClick={event => event.stopPropagation()}>
+      <div className="script-studio-header"><div><span className="eyebrow">AI-POWERED WORKFLOW</span><h2>Script to Images</h2><p>Turn your script into a scene-by-scene image pack.</p></div><button className="modal-close" onClick={onClose}><X size={18}/></button></div>
+      <label className="script-label">VIDEO SCRIPT<textarea value={script} onChange={event => setScript(event.target.value)} placeholder="Paste your complete video script here…"/></label>
+      <div className="script-note"><HardDrive size={14}/> TreasureVault searches your Drive image library first, then uses Google Images for missing matches. Only high-resolution images are shown.</div>
+      <button className="primary-button script-run" onClick={runSearch} disabled={busy || !drive}>{busy ? 'Analysing script and searching…' : 'Find images for my script'} <Sparkles size={16}/></button>
+      {!drive && <p className="script-warning">Connect Google Drive before running the search.</p>}
+      {results && <div className="script-results">
+        <div className="script-results-top"><div><h3>Image results</h3><span>{results.scenes?.length || 0} scenes · {selected.length} selected · {results.libraryImageCount || 0} high-resolution Drive images scanned</span></div><button className="primary-button" disabled={!selected.length || downloading} onClick={download}><Download size={15}/>{downloading ? 'Building ZIP…' : 'Download ZIP'}</button></div>
+        {(results.scenes || []).map((scene,index) => <section className="script-scene" key={scene.id || index}>
+          <div className="script-scene-heading"><span>SCENE {String(index+1).padStart(2,'0')}</span><h4>{scene.title}</h4><p>{scene.visualBrief}</p></div>
+          <div className="script-image-grid">{(scene.images || []).map(image => <label className={'script-image-card ' + (selected.includes(image.selectionId) ? 'selected' : '')} key={image.selectionId}>
+            <div className="script-image-thumb"><img src={image.thumbnailUrl} alt={image.title} loading="lazy"/><input type="checkbox" checked={selected.includes(image.selectionId)} onChange={() => toggle(image.selectionId)}/></div>
+            <div className="script-image-info"><strong title={image.title}>{image.title}</strong><span>{image.width && image.height ? image.width+' × '+image.height : 'Resolution unavailable'} · {image.sourceType === 'drive' ? 'Your Drive' : image.sourceName || 'Google Images'}</span>{image.sourceUrl && <a href={image.sourceUrl} target="_blank" rel="noreferrer" onClick={event => event.stopPropagation()}>View source ↗</a>}</div>
+          </label>)}</div>
+          {!scene.images?.length && <p className="script-no-images">No qualifying images found for this scene.</p>}
+        </section>)}
+        <p className="script-disclaimer">Google Images results are not pre-cleared for reuse. Check the original source and permissions before publishing.</p>
+      </div>}
+    </div>
+  </div>
+}
+
 function App() {
   const [active, setActive] = useState('all')
   const [query, setQuery] = useState('')
@@ -78,6 +132,7 @@ function App() {
   const [activeAsset, setActiveAsset] = useState(null)
   const [movingAsset, setMovingAsset] = useState(false)
   const [downloadingAsset, setDownloadingAsset] = useState(false)
+  const [showScriptStudio, setShowScriptStudio] = useState(false)
 
   const visible = useMemo(() => {
     const q = query.trim().toLowerCase()
@@ -217,7 +272,7 @@ function App() {
       <div className="content-wrap">
         <section className="page-heading">
           <div><div className="eyebrow">YOUR CREATIVE UNIVERSE</div><h1>{currentCategory}</h1><p>Everything you need for your next edit, in one place.</p></div>
-          <button className="primary-button" onClick={() => setShowUpload(true)}><Plus size={16} /> Add assets</button>
+          <div className="heading-actions"><button className="secondary-ai-button" onClick={() => setShowScriptStudio(true)}><Sparkles size={15}/> Script to images</button><button className="primary-button" onClick={() => setShowUpload(true)}><Plus size={16} /> Add assets</button></div>
         </section>
 
         <section className="search-panel">
@@ -271,6 +326,7 @@ function App() {
       </div>
     </main>
 
+    {showScriptStudio && <ScriptImageStudio drive={drive} onClose={() => setShowScriptStudio(false)} notify={notify} />}
     {activeAsset && <div className="drawer-backdrop" onClick={() => setActiveAsset(null)}><aside className="asset-drawer" onClick={e => e.stopPropagation()}>
       <div className="drawer-header"><div><span className="eyebrow">ASSET DETAILS</span><h2>Preview</h2></div><button className="modal-close" onClick={() => setActiveAsset(null)} aria-label="Close details"><X size={18} /></button></div>
       <div className="drawer-preview"><AssetPreview item={activeAsset} /><span className="drawer-kind">{activeAsset.kind}</span></div>
