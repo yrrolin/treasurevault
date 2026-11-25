@@ -86,9 +86,11 @@ function ScriptImageStudio({ drive, onClose, notify }) {
       setSelected(all.slice(0, 20).map(image => image.selectionId))
       setMessages(old => [...old, {
         role: 'assistant',
-        text: all.length
-          ? "I've analysed your script and found visual options for each scene. Select the images you want in your pack."
-          : "I broke your script into scenes, but couldn't find qualifying high-resolution images. Try adding more visual detail.",
+        text: data.aiProvider === 'Groq GPT-OSS 20B'
+          ? "Gemini was unavailable, so I automatically switched to the Groq backup model. I've analysed your script and found visual options for each scene. Select the images you want in your pack."
+          : all.length
+            ? "I've analysed your script and found visual options for each scene. Select the images you want in your pack."
+            : "I broke your script into scenes, but couldn't find qualifying high-resolution images. Try adding more visual detail.",
         results: data,
         aiProvider: data.aiProvider || 'AI assistant',
       }])
